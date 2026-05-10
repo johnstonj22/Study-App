@@ -2,12 +2,16 @@ import Link from "next/link";
 import type { Topic } from "@/lib/types/domain";
 
 export function DashboardStats({
-  dueCount,
+  dueToday,
+  dailyQuota,
+  completedToday,
   recentTopics,
   weakestTopics,
   hasAnyTopics,
 }: {
-  dueCount: number;
+  dueToday: number;
+  dailyQuota: number;
+  completedToday: number;
   recentTopics: Topic[];
   weakestTopics: Topic[];
   hasAnyTopics: boolean;
@@ -34,17 +38,21 @@ export function DashboardStats({
       <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Due now
+            Today
           </p>
-          <p className="text-3xl font-semibold tabular-nums">{dueCount}</p>
+          <p className="text-3xl font-semibold tabular-nums">
+            {completedToday} / {completedToday + dueToday}
+          </p>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {dueCount === 0
-              ? "You're all caught up."
-              : `item${dueCount === 1 ? "" : "s"} ready for review`}
+            {dueToday === 0
+              ? completedToday >= dailyQuota
+                ? "Daily goal complete."
+                : "You're all caught up."
+              : `${dueToday} left of your ${dailyQuota}/day goal`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {dueCount > 0 ? (
+          {dueToday > 0 ? (
             <Link
               href="/review"
               className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"

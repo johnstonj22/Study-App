@@ -22,6 +22,16 @@ export type TopicCreateInput = z.infer<typeof TopicCreateSchema>;
 export const TopicUpdateSchema = TopicCreateSchema.partial();
 export type TopicUpdateInput = z.infer<typeof TopicUpdateSchema>;
 
+export const TopicPriorityUpdateSchema = z.object({
+  id: z.string().uuid(),
+  priority: z
+    .number()
+    .int("Priority must be a whole number")
+    .min(1, "Priority must be at least 1")
+    .max(99, "Priority cannot exceed 99"),
+});
+export type TopicPriorityUpdateInput = z.infer<typeof TopicPriorityUpdateSchema>;
+
 // --- Service functions ---------------------------------------------------
 
 type Client = SupabaseClient<Database>;
@@ -117,4 +127,35 @@ export async function getWeakestTopics(
     .limit(limit);
   if (error) throw error;
   return data ?? [];
+}
+
+// Map of topic_id → priority for the current user. Used by the distribution
+// algorithm and the bonus ordering. Cheap (one indexed scan, ~rows-per-user).
+export async function getTopicPriorities(
+  client: Client,
+): Promise<Map<string, number>> {
+  const { data, error } = await client.from("topics").select("id, priority");
+  if (error) throw error;
+  const map = new Map<string, number>();
+  for (const row of data ?? []) {
+    map.set(row.id, row.priority);
+  }
+  return map;
+}
+
+// Apply a batch of priority updates in parallel. Each call is a single
+// row update scoped by RLS.
+export async function updateTopicPriorities(
+  client: Client,
+  inputs: TopicPriorityUpdateInput[],
+): Promise<void> {
+  await Promise.all(
+    inputs.map(async ({ id, priority }) => {
+      const { error } = await client
+        .from("topics")
+        .update({ priority })
+        .eq("id", id);
+      if (error) throw error;
+    }),
+  );
 }

@@ -46,3 +46,30 @@ export type ReviewItemType = "flashcard" | "short_answer";
 export type ReviewQueueItem =
   | ({ kind: "flashcard" } & Flashcard)
   | ({ kind: "short_answer" } & ShortAnswerQuestion);
+
+// --- Distribution / scheduling --------------------------------------------
+
+export interface DistributionPrefs {
+  // Per-day quota, length must equal the requested numDays. Caller can pass
+  // [dailyQuota - completedToday, dailyQuota, dailyQuota, ...] to reflect
+  // already-completed work today, or [dailyQuota] * numDays for a fresh
+  // projection.
+  dailyQuotas: number[];
+  // 0..1 share of each day allocated to flashcards (rest goes to short-answer).
+  // Defaults to 0.5 when omitted by the caller.
+  flashcardRatio: number;
+  // Optional per-topic priority. Lower number = higher priority. The
+  // algorithm allocates priority-1 items in full before priority-2, etc.
+  // Within a tier topics share evenly. Missing topics use defaultPriority.
+  topicPriorities?: Map<string, number>;
+  // Priority assumed for topics not present in topicPriorities. Defaults
+  // to 5 (the schema's column default), so unconfigured users behave
+  // identically to "all topics tied at the same priority".
+  defaultPriority?: number;
+}
+
+export interface DayBucket {
+  // YYYY-MM-DD in the caller-supplied timezone.
+  date: string;
+  items: ReviewQueueItem[];
+}

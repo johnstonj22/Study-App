@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { TimezoneSync } from "@/components/TimezoneSync";
 import { LogoutButton } from "./logout-button";
 
 export default async function AppLayout({
@@ -19,6 +20,7 @@ export default async function AppLayout({
 
   return (
     <div className="flex flex-1 flex-col">
+      <TimezoneSync />
       <header className="border-b border-zinc-200 dark:border-zinc-800">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           <Link href="/dashboard" className="text-base font-semibold">
@@ -33,6 +35,12 @@ export default async function AppLayout({
             </Link>
             <Link href="/review" className="hover:underline">
               Review
+            </Link>
+            <Link href="/calendar" className="hover:underline">
+              Calendar
+            </Link>
+            <Link href="/study-plan" className="hover:underline">
+              Study plan
             </Link>
             <LogoutButton />
           </nav>

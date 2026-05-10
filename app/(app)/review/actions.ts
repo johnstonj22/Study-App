@@ -48,4 +48,5 @@ export async function rateItemAction(
 
   revalidatePath("/review");
   revalidatePath("/dashboard");
+  revalidatePath("/calendar");
 }

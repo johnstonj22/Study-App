@@ -101,6 +101,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          daily_quota: number
           display_name: string | null
           id: string
           timezone: string
@@ -108,6 +109,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          daily_quota?: number
           display_name?: string | null
           id: string
           timezone?: string
@@ -115,6 +117,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          daily_quota?: number
           display_name?: string | null
           id?: string
           timezone?: string
@@ -249,6 +252,7 @@ export type Database = {
           description: string | null
           id: string
           mastery_score: number
+          priority: number
           title: string
           updated_at: string
           user_id: string
@@ -259,6 +263,7 @@ export type Database = {
           description?: string | null
           id?: string
           mastery_score?: number
+          priority?: number
           title: string
           updated_at?: string
           user_id: string
@@ -269,6 +274,7 @@ export type Database = {
           description?: string | null
           id?: string
           mastery_score?: number
+          priority?: number
           title?: string
           updated_at?: string
           user_id?: string

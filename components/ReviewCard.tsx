@@ -30,10 +30,12 @@ export function ReviewCard({
   item,
   pending,
   onRate,
+  topicPath,
 }: {
   item: ReviewQueueItem;
   pending: boolean;
   onRate: (rating: Rating) => void;
+  topicPath: string;
 }) {
   const [revealed, setRevealed] = useState(false);
   const [userAnswer, setUserAnswer] = useState("");
@@ -47,9 +49,16 @@ export function ReviewCard({
   return (
     <div className="space-y-6">
       <div className="space-y-3 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
-        <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          {isFlashcard ? "Flashcard" : "Short-answer question"}
-        </p>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            {isFlashcard ? "Flashcard" : "Short-answer question"}
+          </p>
+          {topicPath && (
+            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+              {topicPath}
+            </p>
+          )}
+        </div>
         <p className="text-base font-medium whitespace-pre-line">
           {isFlashcard ? item.front : item.prompt}
         </p>

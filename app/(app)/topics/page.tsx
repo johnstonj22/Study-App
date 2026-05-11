@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { listTopics } from "@/lib/services/topics";
-import { TopicCard } from "@/components/TopicCard";
+import {
+  computeTopicMasteryTree,
+  getTopicTree,
+} from "@/lib/services/topics";
+import { TopicTreeList } from "@/components/TopicTreeList";
 
 export default async function TopicsPage() {
   const supabase = await createClient();
-  const topics = await listTopics(supabase);
+  const [tree, mastery] = await Promise.all([
+    getTopicTree(supabase),
+    computeTopicMasteryTree(supabase),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -19,7 +25,7 @@ export default async function TopicsPage() {
         </Link>
       </div>
 
-      {topics.length === 0 ? (
+      {tree.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             You don&apos;t have any topics yet.
@@ -32,11 +38,7 @@ export default async function TopicsPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {topics.map((topic) => (
-            <TopicCard key={topic.id} topic={topic} />
-          ))}
-        </div>
+        <TopicTreeList nodes={tree} masteryMap={mastery.map} />
       )}
     </div>
   );

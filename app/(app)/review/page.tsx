@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import {
   distributeAcrossDays,
+  dowFromDateKey,
   formatDateKey,
   orderForBonus,
   startOfDayInTimezone,
@@ -12,8 +13,17 @@ import {
   getCompletedCountsByDay,
   getItemsInWindow,
 } from "@/lib/services/reviews";
-import { getProfile } from "@/lib/services/profiles";
-import { getTopicPriorities } from "@/lib/services/topics";
+import {
+  effectiveQuotaForDow,
+  getProfile,
+  getSkipDates,
+  readWeeklySchedule,
+} from "@/lib/services/profiles";
+import {
+  getAncestorChain,
+  getTopicPriorities,
+  listTopics,
+} from "@/lib/services/topics";
 import { ReviewQueue } from "@/components/ReviewQueue";
 
 export default async function ReviewPage() {
@@ -26,6 +36,7 @@ export default async function ReviewPage() {
   const profile = await getProfile(supabase, user.id);
   const dailyQuota = profile?.daily_quota ?? 10;
   const tz = profile?.timezone ?? "UTC";
+  const weekly = readWeeklySchedule(profile);
 
   const now = new Date();
   const startOfToday = startOfDayInTimezone(now, tz);
@@ -38,20 +49,47 @@ export default async function ReviewPage() {
   // later today (next_review_at after `now` but before tomorrow's local
   // midnight), which would otherwise be invisible to the review page until
   // their timestamp passed.
-  const [eligible, completedMap, topicPriorities] = await Promise.all([
-    getItemsInWindow(supabase, new Date(0), startOfTomorrow),
-    getCompletedCountsByDay(supabase, startOfToday, startOfTomorrow, tz),
-    getTopicPriorities(supabase),
-  ]);
+  const [eligible, completedMap, topicPriorities, allTopics, skipDates] =
+    await Promise.all([
+      getItemsInWindow(supabase, new Date(0), startOfTomorrow),
+      getCompletedCountsByDay(supabase, startOfToday, startOfTomorrow, tz),
+      getTopicPriorities(supabase),
+      listTopics(supabase),
+      getSkipDates(supabase, user.id),
+    ]);
+
+  // Pre-build "Root / Mid / Leaf" paths for every topic so the review card
+  // can show context even when topics nest several levels deep.
+  const topicsById = new Map(allTopics.map((t) => [t.id, t]));
+  const topicPaths = new Map<string, string>();
+  for (const t of allTopics) {
+    topicPaths.set(
+      t.id,
+      getAncestorChain(t.id, topicsById)
+        .map((a) => a.title)
+        .join(" / "),
+    );
+  }
 
   const completedToday = completedMap.get(todayKey) ?? 0;
-  const remainingQuota = Math.max(0, dailyQuota - completedToday);
+  const todayDow = dowFromDateKey(todayKey);
+  const todayQuota = effectiveQuotaForDow(todayDow, weekly.quotas, dailyQuota);
+  const remainingQuota = Math.max(0, todayQuota - completedToday);
+
+  const allSkipDates = weekly.skipDays.has(todayDow)
+    ? new Set([...skipDates, todayKey])
+    : skipDates;
 
   const [todayBucket] = distributeAcrossDays(
     eligible,
     startOfToday,
     1,
-    { dailyQuotas: [remainingQuota], flashcardRatio: 0.5, topicPriorities },
+    {
+      dailyQuotas: [remainingQuota],
+      flashcardRatio: 0.5,
+      topicPriorities,
+      skipDates: allSkipDates,
+    },
     tz,
   );
   const goalItems = todayBucket?.items ?? [];
@@ -69,7 +107,7 @@ export default async function ReviewPage() {
           href="/study-plan"
           className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
         >
-          {dailyQuota}/day · edit
+          {todayQuota}/day · edit
         </Link>
       </div>
 
@@ -90,7 +128,8 @@ export default async function ReviewPage() {
           goalItems={goalItems}
           bonusItems={bonusItems}
           completedToday={completedToday}
-          dailyQuota={dailyQuota}
+          dailyQuota={todayQuota}
+          topicPaths={topicPaths}
         />
       )}
     </div>

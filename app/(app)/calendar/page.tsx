@@ -1,14 +1,25 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/services/profiles";
-import { getTopicPriorities } from "@/lib/services/topics";
+import {
+  effectiveQuotaForDow,
+  getProfile,
+  getSkipDates,
+  readWeeklySchedule,
+} from "@/lib/services/profiles";
+import {
+  getAncestorChain,
+  getTopicPriorities,
+  listTopics,
+} from "@/lib/services/topics";
 import {
   getCompletedCountsByDay,
   getItemsInWindow,
+  getReviewHistoryForDay,
 } from "@/lib/services/reviews";
 import {
   distributeAcrossDays,
+  dowFromDateKey,
   formatDateKey,
   startOfDayInTimezone,
   startOfLocalDay,
@@ -18,6 +29,11 @@ import {
   type CalendarCell,
   type DayBreakdown,
 } from "@/components/CalendarMonthGrid";
+import {
+  CalendarDayPanel,
+  type DayPanelItem,
+} from "@/components/CalendarDayPanel";
+import type { ReviewQueueItem } from "@/lib/types/domain";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -37,6 +53,10 @@ function shiftMonth(year: number, month: number, delta: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+function isValidDayKey(raw: string | undefined): raw is string {
+  return !!raw && /^\d{4}-\d{2}-\d{2}$/.test(raw);
+}
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -45,7 +65,7 @@ const MONTH_NAMES = [
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ month?: string; day?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -56,6 +76,7 @@ export default async function CalendarPage({
   const profile = await getProfile(supabase, user.id);
   const dailyQuota = profile?.daily_quota ?? 10;
   const tz = profile?.timezone ?? "UTC";
+  const weekly = readWeeklySchedule(profile);
 
   const params = await searchParams;
   const today = startOfDayInTimezone(new Date(), tz);
@@ -68,6 +89,7 @@ export default async function CalendarPage({
     year: tyDefault!,
     month: tmDefault!,
   });
+  const monthParam = `${year}-${String(month).padStart(2, "0")}`;
 
   // Grid range: Sunday-on-or-before the 1st through Saturday-on-or-after the
   // last of the month, expressed in the user's tz. Day-of-week is calendar-
@@ -90,30 +112,72 @@ export default async function CalendarPage({
   // Pull every item due strictly before gridEnd so the distribution can place
   // each into its day. Lower bound is 0 to include overdue items in today's
   // bucket.
-  const [eligible, completedMap, topicPriorities] = await Promise.all([
-    getItemsInWindow(supabase, new Date(0), gridEndExclusive),
-    getCompletedCountsByDay(supabase, gridStart, gridEndExclusive, tz),
-    getTopicPriorities(supabase),
-  ]);
+  const [eligible, completedMap, topicPriorities, allTopics, skipDates] =
+    await Promise.all([
+      getItemsInWindow(supabase, new Date(0), gridEndExclusive),
+      getCompletedCountsByDay(supabase, gridStart, gridEndExclusive, tz),
+      getTopicPriorities(supabase),
+      listTopics(supabase),
+      getSkipDates(supabase, user.id),
+    ]);
+
+  // Weekly skip days expanded into specific YYYY-MM-DD keys across the visible
+  // grid. Used for both the scheduler (union with one-off skip dates) and
+  // the grid (to render a "weekly off" cell with no toggle). Filled below
+  // during the dist-window walk and the grid-window walk.
+  const weeklySkippedKeys = new Set<string>();
 
   // Project distribution from today (or skip entirely for fully-past months).
   const distStart = today.getTime() < gridEndExclusive.getTime() ? today : null;
   const breakdownByDate = new Map<string, DayBreakdown>();
+  const bucketsByDate = new Map<string, ReviewQueueItem[]>();
   if (distStart) {
     const distDays = Math.max(
       1,
       Math.round((gridEndExclusive.getTime() - distStart.getTime()) / MS_PER_DAY),
     );
     const completedToday = completedMap.get(todayKey) ?? 0;
-    const remainingQuota = Math.max(0, dailyQuota - completedToday);
-    const dailyQuotas = Array.from({ length: distDays }, (_, i) =>
-      i === 0 ? remainingQuota : dailyQuota,
+    const todayDow = dowFromDateKey(todayKey);
+    const todayQuota = effectiveQuotaForDow(
+      todayDow,
+      weekly.quotas,
+      dailyQuota,
     );
+    const remainingQuota = Math.max(0, todayQuota - completedToday);
+
+    // Walk the dist window once: build per-day quotas from the weekly
+    // overrides and gather weekly-skipped dates within this range.
+    const dailyQuotas: number[] = [];
+    const [dsy, dsm, dsd] = formatDateKey(distStart, tz)
+      .split("-")
+      .map(Number);
+    for (let i = 0; i < distDays; i++) {
+      const dayStart = startOfLocalDay(dsy!, dsm!, dsd! + i, tz);
+      const key = formatDateKey(dayStart, tz);
+      const dow = dowFromDateKey(key);
+      if (weekly.skipDays.has(dow)) weeklySkippedKeys.add(key);
+      dailyQuotas.push(
+        i === 0
+          ? remainingQuota
+          : effectiveQuotaForDow(dow, weekly.quotas, dailyQuota),
+      );
+    }
+
+    const allSkipDates = new Set<string>([
+      ...skipDates,
+      ...weeklySkippedKeys,
+    ]);
+
     const buckets = distributeAcrossDays(
       eligible,
       distStart,
       distDays,
-      { dailyQuotas, flashcardRatio: 0.5, topicPriorities },
+      {
+        dailyQuotas,
+        flashcardRatio: 0.5,
+        topicPriorities,
+        skipDates: allSkipDates,
+      },
       tz,
     );
     for (const b of buckets) {
@@ -122,6 +186,22 @@ export default async function CalendarPage({
         flashcards: b.items.filter((i) => i.kind === "flashcard").length,
         shortAnswers: b.items.filter((i) => i.kind === "short_answer").length,
       });
+      bucketsByDate.set(b.date, b.items);
+    }
+  }
+
+  // Also flag past weekly-off days in the grid so they render as muted
+  // (visual consistency; doesn't change any computation).
+  if (weekly.skipDays.size > 0) {
+    const [gsy0, gsm0, gsd0] = formatDateKey(gridStart, tz)
+      .split("-")
+      .map(Number);
+    for (let i = 0; i < gridDayCount; i++) {
+      const dayStart = startOfLocalDay(gsy0!, gsm0!, gsd0! + i, tz);
+      const key = formatDateKey(dayStart, tz);
+      if (weekly.skipDays.has(dowFromDateKey(key))) {
+        weeklySkippedKeys.add(key);
+      }
     }
   }
 
@@ -144,11 +224,60 @@ export default async function CalendarPage({
     };
   });
 
+  // ----- Day panel ---------------------------------------------------------
+  // Selected day either comes from `?day=`, or defaults to today (if the
+  // current month grid contains today). This way the panel is always present
+  // when there's something natural to show.
+  const explicitDay = isValidDayKey(params.day) ? params.day! : null;
+  const selectedDay =
+    explicitDay ?? (cells.some((c) => c.isToday) ? todayKey : null);
+
+  let panelItems: DayPanelItem[] = [];
+  let panelMode: "past" | "today" | "future" = "future";
+  let panelDateLabel = "";
+  if (selectedDay) {
+    const [sy, sm, sd] = selectedDay.split("-").map(Number);
+    const dayStart = startOfLocalDay(sy!, sm!, sd!, tz);
+    const dayEnd = startOfLocalDay(sy!, sm!, sd! + 1, tz);
+    panelDateLabel = formatPanelDate(sy!, sm!, sd!);
+
+    if (dayStart.getTime() < today.getTime()) {
+      panelMode = "past";
+      const history = await getReviewHistoryForDay(supabase, dayStart, dayEnd);
+      panelItems = history.map((h) => ({
+        kind: h.kind,
+        label: h.label,
+        topicId: h.topic_id,
+        rating: h.rating,
+      }));
+    } else {
+      panelMode = selectedDay === todayKey ? "today" : "future";
+      const items = bucketsByDate.get(selectedDay) ?? [];
+      panelItems = items.map((it) => ({
+        kind: it.kind,
+        label: it.kind === "flashcard" ? it.front : it.prompt,
+        topicId: it.topic_id,
+      }));
+    }
+  }
+
+  // Topic-path map for the panel grouping.
+  const topicsById = new Map(allTopics.map((t) => [t.id, t]));
+  const topicPaths = new Map<string, string>();
+  for (const t of allTopics) {
+    topicPaths.set(
+      t.id,
+      getAncestorChain(t.id, topicsById)
+        .map((a) => a.title)
+        .join(" / "),
+    );
+  }
+
   const prevMonth = shiftMonth(year, month, -1);
   const nextMonth = shiftMonth(year, month, +1);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto max-w-6xl space-y-4">
       <div className="flex items-baseline justify-between">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">Calendar</h1>
@@ -184,7 +313,28 @@ export default async function CalendarPage({
         </nav>
       </div>
 
-      <CalendarMonthGrid cells={cells} />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <CalendarMonthGrid
+          cells={cells}
+          month={monthParam}
+          selectedDay={selectedDay ?? undefined}
+          skipDates={skipDates}
+          weeklySkippedDates={weeklySkippedKeys}
+        />
+        {selectedDay && (
+          <CalendarDayPanel
+            dateLabel={panelDateLabel}
+            mode={panelMode}
+            items={panelItems}
+            topicPaths={topicPaths}
+          />
+        )}
+      </div>
     </div>
   );
+}
+
+function formatPanelDate(y: number, m: number, d: number): string {
+  // Stable Y-M-D in user's tz; format like "May 10, 2026".
+  return `${MONTH_NAMES[m - 1]} ${d}, ${y}`;
 }

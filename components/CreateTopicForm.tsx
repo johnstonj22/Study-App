@@ -19,8 +19,13 @@ function SubmitButton() {
   );
 }
 
-export function CreateTopicForm() {
-  const [state, formAction] = useActionState(createTopicAction, INITIAL_STATE);
+export function CreateTopicForm({
+  parentId = null,
+}: {
+  parentId?: string | null;
+}) {
+  const action = createTopicAction.bind(null, parentId);
+  const [state, formAction] = useActionState(action, INITIAL_STATE);
 
   return (
     <form action={formAction} className="space-y-4">

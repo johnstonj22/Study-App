@@ -1,8 +1,14 @@
 import Link from "next/link";
 import type { Topic } from "@/lib/types/domain";
 
-export function TopicCard({ topic }: { topic: Topic }) {
-  const mastery = Math.round(Number(topic.mastery_score));
+export function TopicCard({
+  topic,
+  mastery,
+}: {
+  topic: Topic;
+  mastery: number;
+}) {
+  const display = Math.round(mastery);
   return (
     <Link
       href={`/topics/${topic.id}`}
@@ -11,7 +17,7 @@ export function TopicCard({ topic }: { topic: Topic }) {
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-medium">{topic.title}</h3>
         <span className="shrink-0 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-          {mastery}%
+          {display}%
         </span>
       </div>
       {topic.category && (

@@ -19,9 +19,23 @@ export type Profile = Tables["profiles"]["Row"];
 export type ProfileInsert = Tables["profiles"]["Insert"];
 export type ProfileUpdate = Tables["profiles"]["Update"];
 
-export type Topic = Tables["topics"]["Row"];
-export type TopicInsert = Tables["topics"]["Insert"];
-export type TopicUpdate = Tables["topics"]["Update"];
+// `parent_id` is added by migration 0008. The local intersection keeps the
+// service layer compiling against the current generated Database type until
+// `npx supabase gen types typescript --linked > lib/types/database.ts` is
+// re-run after the migration is applied. The intersection is harmless once
+// the column is properly typed in Database — TS just sees `string | null`
+// either way.
+export type Topic = Tables["topics"]["Row"] & { parent_id: string | null };
+export type TopicInsert = Tables["topics"]["Insert"] & {
+  parent_id?: string | null;
+};
+export type TopicUpdate = Tables["topics"]["Update"] & {
+  parent_id?: string | null;
+};
+
+// A topic with its descendants resolved into a nested structure. Built
+// in-memory by `getTopicTree` from a flat list. Pure value type.
+export type TopicTreeNode = Topic & { children: TopicTreeNode[] };
 
 export type Flashcard = Tables["flashcards"]["Row"];
 export type FlashcardInsert = Tables["flashcards"]["Insert"];
@@ -66,6 +80,11 @@ export interface DistributionPrefs {
   // to 5 (the schema's column default), so unconfigured users behave
   // identically to "all topics tied at the same priority".
   defaultPriority?: number;
+  // Set of YYYY-MM-DD strings (in the same timezone the distribution is
+  // computed in) the user wants to skip. On those days the bucket is empty
+  // and `dailyQuotas[i]` is NOT consumed; eligible items roll forward to
+  // the next non-skipped day naturally.
+  skipDates?: Set<string>;
 }
 
 export interface DayBucket {

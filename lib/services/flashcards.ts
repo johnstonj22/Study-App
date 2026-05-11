@@ -8,6 +8,7 @@ import type {
   FlashcardInsert,
   FlashcardUpdate,
 } from "../types/domain";
+import { assertCanAddQuestion } from "./topics";
 
 // --- Validation schemas --------------------------------------------------
 
@@ -44,6 +45,8 @@ export async function createFlashcard(
   topicId: string,
   input: FlashcardCreateInput,
 ): Promise<Flashcard> {
+  await assertCanAddQuestion(client, topicId);
+
   const insert: FlashcardInsert = {
     user_id: userId,
     topic_id: topicId,

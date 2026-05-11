@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { Topic } from "@/lib/types/domain";
 
 export function DashboardStats({
@@ -6,15 +7,21 @@ export function DashboardStats({
   dailyQuota,
   completedToday,
   recentTopics,
-  weakestTopics,
   hasAnyTopics,
+  overallMastery,
+  masteryMap,
+  mapSlot,
 }: {
   dueToday: number;
   dailyQuota: number;
   completedToday: number;
   recentTopics: Topic[];
-  weakestTopics: Topic[];
   hasAnyTopics: boolean;
+  overallMastery: number;
+  masteryMap: Map<string, number>;
+  // The mastery graph slots in between the stat tiles and the recent-topics
+  // list. Server-rendered surrounding content + client-rendered map.
+  mapSlot?: ReactNode;
 }) {
   if (!hasAnyTopics) {
     return (
@@ -35,61 +42,70 @@ export function DashboardStats({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
-        <div className="space-y-1">
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Today
+            </p>
+            <p className="text-3xl font-semibold tabular-nums">
+              {completedToday} / {completedToday + dueToday}
+            </p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {dueToday === 0
+                ? completedToday >= dailyQuota
+                  ? "Daily goal complete."
+                  : "You're all caught up."
+                : `${dueToday} left of your ${dailyQuota}/day goal`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {dueToday > 0 ? (
+              <Link
+                href="/review"
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                Start review
+              </Link>
+            ) : (
+              <span
+                aria-disabled
+                className="cursor-not-allowed rounded-md bg-zinc-200 px-4 py-2 text-sm font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500"
+              >
+                Start review
+              </span>
+            )}
+            <Link
+              href="/topics/new"
+              className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              Create topic
+            </Link>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
           <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Today
+            Overall mastery
           </p>
           <p className="text-3xl font-semibold tabular-nums">
-            {completedToday} / {completedToday + dueToday}
+            {Math.round(overallMastery)}%
           </p>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {dueToday === 0
-              ? completedToday >= dailyQuota
-                ? "Daily goal complete."
-                : "You're all caught up."
-              : `${dueToday} left of your ${dailyQuota}/day goal`}
+            Average across your top-level topics.
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {dueToday > 0 ? (
-            <Link
-              href="/review"
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              Start review
-            </Link>
-          ) : (
-            <span
-              aria-disabled
-              className="cursor-not-allowed rounded-md bg-zinc-200 px-4 py-2 text-sm font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500"
-            >
-              Start review
-            </span>
-          )}
-          <Link
-            href="/topics/new"
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            Create topic
-          </Link>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <TopicList
-          title="Weakest topics"
-          subtitle="Lowest mastery first"
-          topics={weakestTopics}
-          emptyMessage="No topics to rank yet."
-        />
-        <TopicList
-          title="Recently updated"
-          subtitle="Most recent edits first"
-          topics={recentTopics}
-          emptyMessage="No recent topic edits."
-        />
-      </div>
+      {mapSlot}
+
+      <TopicList
+        title="Recently updated"
+        subtitle="Most recent edits first"
+        topics={recentTopics}
+        masteryMap={masteryMap}
+        emptyMessage="No recent topic edits."
+      />
     </div>
   );
 }
@@ -98,11 +114,13 @@ function TopicList({
   title,
   subtitle,
   topics,
+  masteryMap,
   emptyMessage,
 }: {
   title: string;
   subtitle: string;
   topics: Topic[];
+  masteryMap: Map<string, number>;
   emptyMessage: string;
 }) {
   return (
@@ -118,7 +136,7 @@ function TopicList({
       ) : (
         <ul className="space-y-2">
           {topics.map((topic) => {
-            const mastery = Math.round(Number(topic.mastery_score));
+            const mastery = Math.round(masteryMap.get(topic.id) ?? 0);
             return (
               <li key={topic.id}>
                 <Link

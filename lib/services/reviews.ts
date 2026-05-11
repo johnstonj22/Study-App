@@ -147,6 +147,72 @@ export async function getCompletedCountsByDay(
   return counts;
 }
 
+// Items reviewed on a single day, joined with their flashcard / short-answer
+// label so the calendar's day panel can show "what did I work on yesterday".
+// `topic_id` is the snapshot from review_history (the topic at the time of
+// review) — if the question has since been moved, that historical placement
+// is preserved.
+export type ReviewedItem = {
+  id: string;
+  reviewed_at: string;
+  rating: Rating;
+  topic_id: string | null;
+  kind: ReviewItemType;
+  item_id: string;
+  label: string;
+};
+
+export async function getReviewHistoryForDay(
+  client: Client,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<ReviewedItem[]> {
+  const { data, error } = await client
+    .from("review_history")
+    .select(
+      "id, reviewed_at, rating, topic_id, flashcard_id, short_answer_id, flashcard:flashcards(front), short_answer:short_answer_questions(prompt)",
+    )
+    .gte("reviewed_at", dayStart.toISOString())
+    .lt("reviewed_at", dayEnd.toISOString())
+    .order("reviewed_at", { ascending: true });
+  if (error) throw error;
+
+  const items: ReviewedItem[] = [];
+  for (const row of (data ?? []) as Array<{
+    id: string;
+    reviewed_at: string;
+    rating: Rating;
+    topic_id: string | null;
+    flashcard_id: string | null;
+    short_answer_id: string | null;
+    flashcard: { front: string } | null;
+    short_answer: { prompt: string } | null;
+  }>) {
+    if (row.flashcard_id) {
+      items.push({
+        id: row.id,
+        reviewed_at: row.reviewed_at,
+        rating: row.rating,
+        topic_id: row.topic_id,
+        kind: "flashcard",
+        item_id: row.flashcard_id,
+        label: row.flashcard?.front ?? "(deleted flashcard)",
+      });
+    } else if (row.short_answer_id) {
+      items.push({
+        id: row.id,
+        reviewed_at: row.reviewed_at,
+        rating: row.rating,
+        topic_id: row.topic_id,
+        kind: "short_answer",
+        item_id: row.short_answer_id,
+        label: row.short_answer?.prompt ?? "(deleted question)",
+      });
+    }
+  }
+  return items;
+}
+
 export async function recordReview(
   client: Client,
   params: {

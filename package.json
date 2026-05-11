@@ -13,6 +13,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.3",
+    "@xyflow/react": "^12.10.2",
     "next": "^15.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

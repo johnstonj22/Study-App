@@ -8,6 +8,7 @@ import type {
   ShortAnswerQuestionInsert,
   ShortAnswerQuestionUpdate,
 } from "../types/domain";
+import { assertCanAddQuestion } from "./topics";
 
 // --- Validation schemas --------------------------------------------------
 
@@ -44,6 +45,8 @@ export async function createShortAnswer(
   topicId: string,
   input: ShortAnswerCreateInput,
 ): Promise<ShortAnswerQuestion> {
+  await assertCanAddQuestion(client, topicId);
+
   const insert: ShortAnswerQuestionInsert = {
     user_id: userId,
     topic_id: topicId,

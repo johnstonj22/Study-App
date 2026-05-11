@@ -13,11 +13,13 @@ export function ReviewQueue({
   bonusItems,
   completedToday,
   dailyQuota,
+  topicPaths,
 }: {
   goalItems: ReviewQueueItem[];
   bonusItems: ReviewQueueItem[];
   completedToday: number;
   dailyQuota: number;
+  topicPaths: Map<string, string>;
 }) {
   const [goal] = useState(goalItems);
   const [bonus] = useState(bonusItems);
@@ -152,6 +154,7 @@ export function ReviewQueue({
         item={current!}
         pending={pending}
         onRate={handleRate}
+        topicPath={topicPaths.get(current!.topic_id) ?? ""}
       />
 
       {error && (

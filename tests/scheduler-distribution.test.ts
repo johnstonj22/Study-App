@@ -383,3 +383,83 @@ describe("formatDateKey", () => {
     );
   });
 });
+
+describe("distributeAcrossDays — skip days", () => {
+  it("returns an empty bucket for a skipped day and rolls items forward", () => {
+    // 4 items all due day 0. Quota is 2/day. Day 1 is skipped → items that
+    // would have landed there on a normal schedule appear on day 2 instead.
+    const items = Array.from({ length: 4 }, () => makeFlashcard());
+    const buckets = distributeAcrossDays(
+      items,
+      START,
+      3,
+      { ...PREFS([2, 2, 2]), skipDates: new Set(["2026-05-10"]) },
+      TZ,
+    );
+    expect(buckets.map((b) => b.items.length)).toEqual([2, 0, 2]);
+    expect(buckets[1]!.date).toBe("2026-05-10");
+  });
+
+  it("does not consume the daily quota on a skipped day", () => {
+    // 5 items all due day 0. Quota 2/day. With day 1 skipped, the first 2
+    // land on day 0 and remaining 3 try to fit days 1+2. Day 1 is skipped
+    // (no quota consumed), so day 2 still gets only 2 items, leaving 1
+    // unscheduled in this 3-day window.
+    const items = Array.from({ length: 5 }, () => makeFlashcard());
+    const buckets = distributeAcrossDays(
+      items,
+      START,
+      3,
+      { ...PREFS([2, 2, 2]), skipDates: new Set(["2026-05-10"]) },
+      TZ,
+    );
+    expect(buckets.map((b) => b.items.length)).toEqual([2, 0, 2]);
+    const placed = buckets.flatMap((b) => b.items).length;
+    expect(placed).toBe(4);
+  });
+
+  it("places an item due only on a skipped day on the next non-skipped day", () => {
+    // Item is only eligible starting 2026-05-10 (the skipped day). With day
+    // 1 skipped it should appear on day 2.
+    const item = makeFlashcard({
+      next_review_at: "2026-05-10T08:00:00.000Z",
+    });
+    const buckets = distributeAcrossDays(
+      [item],
+      START,
+      3,
+      { ...PREFS([5, 5, 5]), skipDates: new Set(["2026-05-10"]) },
+      TZ,
+    );
+    expect(buckets[0]!.items).toHaveLength(0);
+    expect(buckets[1]!.items).toHaveLength(0);
+    expect(buckets[2]!.items.map((i) => i.id)).toEqual([item.id]);
+  });
+
+  it("handles back-to-back skip days", () => {
+    const items = Array.from({ length: 3 }, () => makeFlashcard());
+    const buckets = distributeAcrossDays(
+      items,
+      START,
+      4,
+      {
+        ...PREFS([1, 1, 1, 1]),
+        skipDates: new Set(["2026-05-10", "2026-05-11"]),
+      },
+      TZ,
+    );
+    expect(buckets.map((b) => b.items.length)).toEqual([1, 0, 0, 1]);
+  });
+
+  it("treats an empty skipDates set as a no-op", () => {
+    const items = Array.from({ length: 4 }, () => makeFlashcard());
+    const buckets = distributeAcrossDays(
+      items,
+      START,
+      2,
+      { ...PREFS([2, 2]), skipDates: new Set() },
+      TZ,
+    );
+    expect(buckets.map((b) => b.items.length)).toEqual([2, 2]);
+  });
+});

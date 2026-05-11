@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getProfile } from "@/lib/services/profiles";
+import { getProfile, readWeeklySchedule } from "@/lib/services/profiles";
 import { listTopics } from "@/lib/services/topics";
 import { StudyPlanForm } from "@/components/StudyPlanForm";
 import { TopicPriorityForm } from "@/components/TopicPriorityForm";
@@ -17,6 +17,7 @@ export default async function StudyPlanPage() {
     listTopics(supabase),
   ]);
   const dailyQuota = profile?.daily_quota ?? 10;
+  const weekly = readWeeklySchedule(profile);
 
   // Stable display order: by priority asc, then by title for ties.
   const sortedTopics = [...topics].sort(
@@ -34,7 +35,11 @@ export default async function StudyPlanPage() {
 
       <section className="space-y-3">
         <h2 className="text-base font-semibold">Daily goal</h2>
-        <StudyPlanForm dailyQuota={dailyQuota} />
+        <StudyPlanForm
+          dailyQuota={dailyQuota}
+          weeklySkipDays={[...weekly.skipDays].sort((a, b) => a - b)}
+          weeklyQuotas={weekly.quotas}
+        />
       </section>
 
       <section className="space-y-3">

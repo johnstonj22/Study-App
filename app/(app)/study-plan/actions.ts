@@ -17,9 +17,33 @@ export async function updateStudyPlanAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const raw = formData.get("daily_quota");
+  const dailyQuota = Number(formData.get("daily_quota"));
+
+  // Weekly skip days come in as `skip_<dow>` checkbox fields (only present
+  // when checked). Build the int[] from those.
+  const skipDays: number[] = [];
+  for (let dow = 0; dow < 7; dow++) {
+    if (formData.get(`skip_${dow}`) !== null) skipDays.push(dow);
+  }
+
+  // Per-day quotas: skip if the input matches the global daily_quota or is
+  // blank. Storage stays sparse so reverting a day to the default removes
+  // the override.
+  const weeklyQuotas: Record<string, number> = {};
+  for (let dow = 0; dow < 7; dow++) {
+    if (skipDays.includes(dow)) continue;
+    const raw = formData.get(`quota_${dow}`);
+    if (typeof raw !== "string" || raw.trim() === "") continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) continue;
+    if (n === dailyQuota) continue;
+    weeklyQuotas[String(dow)] = n;
+  }
+
   const parsed = StudyPlanUpdateSchema.safeParse({
-    daily_quota: Number(raw),
+    daily_quota: dailyQuota,
+    weekly_skip_days: skipDays,
+    weekly_quotas: weeklyQuotas,
   });
   if (!parsed.success) {
     return {

@@ -91,6 +91,15 @@ export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * MS_PER_DAY);
 }
 
+// Day of week (0=Sun .. 6=Sat) for a YYYY-MM-DD calendar date. Computed
+// via UTC arithmetic on the bare Y-M-D — independent of the user's
+// timezone since "what weekday is May 10, 2026" has the same answer
+// everywhere.
+export function dowFromDateKey(key: string): number {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
+}
+
 // UTC instant when local clock in `timezone` reads `year-month-day 00:00:00`.
 // Handles DST correctly. Negative/overflow day values are normalised by
 // JS Date (e.g., day=0 → last day of previous month), which we use to walk
@@ -481,6 +490,17 @@ export function distributeAcrossDays(
 
   for (let i = 0; i < numDays; i++) {
     const dayStart = startOfLocalDay(sy!, sm!, sd! + i, timezone);
+    const dayKey = formatDateKey(dayStart, timezone);
+
+    // Skip days: empty bucket, no items consumed from `remaining`. The day's
+    // quota is intentionally not consumed either — items eligible only on a
+    // skipped day roll forward to the next non-skipped day's eligible pool
+    // naturally.
+    if (prefs.skipDates?.has(dayKey)) {
+      buckets.push({ date: dayKey, items: [] });
+      continue;
+    }
+
     const nextDayStart = startOfLocalDay(sy!, sm!, sd! + i + 1, timezone);
     const dayEndMs = nextDayStart.getTime();
 
@@ -499,10 +519,7 @@ export function distributeAcrossDays(
       }
     }
 
-    buckets.push({
-      date: formatDateKey(dayStart, timezone),
-      items: allocated,
-    });
+    buckets.push({ date: dayKey, items: allocated });
   }
 
   return buckets;
